@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Send, Sparkles, Loader2 } from 'lucide-react'
 
 const ChatOverlay = ({ theme, showAnalysis }) => {
@@ -6,8 +6,21 @@ const ChatOverlay = ({ theme, showAnalysis }) => {
   const [messages, setMessages] = useState([])
   const [isExpanded, setIsExpanded] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [welcomeShown, setWelcomeShown] = useState(false)
 
   const API_BASE_URL = 'http://localhost:5000/api'
+  
+  // Show welcome message when analysis data is available
+  useEffect(() => {
+    if (showAnalysis && !welcomeShown) {
+      setMessages([{
+        text: "👋 Hi! I'm your AI churn analyst. I've analyzed your uploaded data and I'm ready to answer questions like:\n\n• What are the main factors driving churn?\n• Which customer segments are most at risk?\n• What trends do you see in the data?\n• How can we reduce churn?\n\nAsk me anything!",
+        sender: 'ai'
+      }])
+      setWelcomeShown(true)
+      setIsExpanded(true)
+    }
+  }, [showAnalysis, welcomeShown])
 
   const handleSend = async () => {
     if (message.trim() && !isLoading) {

@@ -180,16 +180,16 @@ You should see output similar to:
 ```
   VITE v5.x.x  ready in xxx ms
 
-  ➜  Local:   http://localhost:5173/
+  ➜  Local:   http://localhost:3000/
   ➜  Network: use --host to expose
 ```
 
-The React app is now running at `http://localhost:5173`
+The React app is now running at `http://localhost:3000`
 
 ### Step 4: Access the Application
 
 1. Open your web browser
-2. Navigate to `http://localhost:5173`
+2. Navigate to `http://localhost:3000`
 3. You should see the ChubbAI landing page
 
 **Note:** Both the backend (Flask) and frontend (Vite) servers must be running simultaneously.
@@ -211,7 +211,7 @@ npm install
 npm run dev
 ```
 
-Then open `http://localhost:5173` in your browser.
+Then open `http://localhost:3000` in your browser.
 
 ## 📊 Workflow
 

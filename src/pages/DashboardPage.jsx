@@ -27,6 +27,10 @@ const DashboardPage = () => {
   const [hoveredRow, setHoveredRow] = useState(null)
   const [loadingExplanation, setLoadingExplanation] = useState(false)
   const [customerExplanation, setCustomerExplanation] = useState(null)
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1)
+  const [rowsPerPage, setRowsPerPage] = useState(10)
 
   const API_BASE_URL = 'http://localhost:5000/api'
 
@@ -35,6 +39,35 @@ const DashboardPage = () => {
     setTheme(savedTheme)
     document.body.className = savedTheme
   }, [])
+
+  // Check if backend has dataset loaded when analysis is shown
+  useEffect(() => {
+    if (showAnalysis && predictionData) {
+      const checkDatasetStatus = async () => {
+        try {
+          const response = await fetch(`${API_BASE_URL}/dataset/status`)
+          const data = await response.json()
+          
+          if (!data.loaded) {
+            // Backend lost the dataset - show warning
+            setError('⚠️ Server was restarted. Please re-upload your data to continue analysis.')
+            setShowAnalysis(false)
+            setPredictionData(null)
+            setSelectedCustomer(null)
+            setSelectedCustomerIndex(null)
+            setCustomerExplanation(null)
+            // Reset pagination
+            setCurrentPage(1)
+            setRowsPerPage(10)
+          }
+        } catch (err) {
+          console.error('Failed to check dataset status:', err)
+        }
+      }
+      
+      checkDatasetStatus()
+    }
+  }, [showAnalysis, predictionData])
 
   const handleDrag = (e) => {
     e.preventDefault()
@@ -91,6 +124,10 @@ const DashboardPage = () => {
       if (data.success) {
         setPredictionData(data)
         setUploadComplete(true)
+        
+        // Reset pagination
+        setCurrentPage(1)
+        setRowsPerPage(10)
         
         // Log GPU acceleration status
         if (data.gpu_accelerated) {
@@ -171,9 +208,20 @@ const DashboardPage = () => {
       console.log(`Response status: ${response.status}`)
       
       if (!response.ok) {
-        const errorText = await response.text()
-        console.error(`HTTP Error ${response.status}:`, errorText)
-        throw new Error(`Server returned ${response.status}`)
+        const errorData = await response.json().catch(() => ({}))
+        console.error(`HTTP Error ${response.status}:`, errorData)
+        
+        if (response.status === 400 && errorData.error?.includes('No dataset loaded')) {
+          setError('⚠️ Backend lost the dataset. Please re-upload your CSV file.')
+          setShowAnalysis(false)
+          setPredictionData(null)
+          // Reset pagination
+          setCurrentPage(1)
+          setRowsPerPage(10)
+          throw new Error('Please re-upload your data')
+        }
+        
+        throw new Error(errorData.error || `Server returned ${response.status}`)
       }
       
       const data = await response.json()
@@ -206,6 +254,29 @@ const DashboardPage = () => {
     setActiveTab('p2p')
     // Fetch explanation for this customer
     fetchCustomerExplanation(index)
+  }
+
+  // Pagination helpers
+  const getPaginatedData = (data) => {
+    if (!data || data.length === 0) return []
+    const startIndex = (currentPage - 1) * rowsPerPage
+    const endIndex = startIndex + rowsPerPage
+    return data.slice(startIndex, endIndex)
+  }
+
+  const getTotalPages = (data) => {
+    if (!data || data.length === 0) return 0
+    return Math.ceil(data.length / rowsPerPage)
+  }
+
+  const handlePageChange = (newPage) => {
+    setCurrentPage(newPage)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const handleRowsPerPageChange = (newRowsPerPage) => {
+    setRowsPerPage(newRowsPerPage)
+    setCurrentPage(1) // Reset to first page when changing rows per page
   }
 
   const getChurnRiskColor = (probability) => {
@@ -523,6 +594,33 @@ const DashboardPage = () => {
               </>
             )}
 
+            {/* Pagination Controls - Top */}
+            <div className={`mb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 p-4 rounded-lg ${theme === 'light' ? 'bg-gray-50' : 'bg-gray-800'}`}>
+              <div className="flex items-center gap-2">
+                <span className="text-sm opacity-70">Rows per page:</span>
+                <select
+                  value={rowsPerPage}
+                  onChange={(e) => handleRowsPerPageChange(Number(e.target.value))}
+                  className={`px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                    theme === 'light' 
+                      ? 'bg-white border-gray-300 hover:border-gray-400' 
+                      : 'bg-gray-700 border-gray-600 hover:border-gray-500'
+                  }`}
+                >
+                  <option value={10}>10</option>
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+              </div>
+              
+              {predictionData && predictionData.customers && (
+                <div className="text-sm opacity-70">
+                  Showing {((currentPage - 1) * rowsPerPage) + 1} to {Math.min(currentPage * rowsPerPage, predictionData.customers.length)} of {predictionData.customers.length} customers
+                </div>
+              )}
+            </div>
+
             <div className="overflow-x-auto rounded-lg">
               {predictionData && predictionData.customers && predictionData.customers.length > 0 ? (
                 <div className="inline-block min-w-full align-middle">
@@ -546,50 +644,53 @@ const DashboardPage = () => {
                       </tr>
                     </thead>
                     <tbody className={`divide-y ${theme === 'light' ? 'divide-gray-200' : 'divide-gray-700'}`}>
-                      {predictionData.customers.map((customer, index) => (
-                        <tr 
-                          key={index} 
-                          onClick={() => handleCustomerClick(customer, index)}
-                          onMouseEnter={() => setHoveredRow(index)}
-                          onMouseLeave={() => setHoveredRow(null)}
-                          className={`cursor-pointer transition-all duration-200 relative ${
-                            hoveredRow === index 
-                              ? theme === 'light' ? 'bg-blue-50 shadow-md' : 'bg-blue-900/20 shadow-md' 
-                              : theme === 'light' ? 'hover:bg-gray-50' : 'hover:bg-gray-700'
-                          }`}
-                        >
-                          {predictionData.columns && predictionData.columns.map((column, colIndex) => (
-                            <td key={colIndex} className="px-4 py-3 text-sm whitespace-nowrap">
-                              {customer[column.key] !== null && customer[column.key] !== undefined 
-                                ? String(customer[column.key]) 
-                                : 'N/A'}
-                            </td>
-                          ))}
-                          <td className="px-4 py-3 text-sm whitespace-nowrap">
-                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${getChurnRiskColor(customer.Churn_Probability)}`}>
-                              {typeof customer.Churn_Probability === 'number' 
-                                ? customer.Churn_Probability.toFixed(2) 
-                                : customer.Churn_Probability}%
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-sm whitespace-nowrap relative">
-                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                              customer.Churn_Prediction === 'High Risk' 
-                                ? 'bg-red-100 text-red-800' 
-                                : 'bg-green-100 text-green-800'
-                            }`}>
-                              {customer.Churn_Prediction}
-                            </span>
-                            {hoveredRow === index && (
-                              <span className={`ml-2 px-2 py-1 rounded text-xs font-medium animate-fadeIn ${
-                                theme === 'light' ? 'bg-blue-600 text-white' : 'bg-blue-500 text-white'
-                              }`}>
-                                View Details →
+                      {getPaginatedData(predictionData.customers).map((customer, displayIndex) => {
+                        const actualIndex = ((currentPage - 1) * rowsPerPage) + displayIndex
+                        return (
+                          <tr 
+                            key={actualIndex} 
+                            onClick={() => handleCustomerClick(customer, actualIndex)}
+                            onMouseEnter={() => setHoveredRow(actualIndex)}
+                            onMouseLeave={() => setHoveredRow(null)}
+                            className={`cursor-pointer transition-all duration-200 relative ${
+                              hoveredRow === actualIndex 
+                                ? theme === 'light' ? 'bg-blue-50 shadow-md' : 'bg-blue-900/20 shadow-md' 
+                                : theme === 'light' ? 'hover:bg-gray-50' : 'hover:bg-gray-700'
+                            }`}
+                          >
+                            {predictionData.columns && predictionData.columns.map((column, colIndex) => (
+                              <td key={colIndex} className="px-4 py-3 text-sm whitespace-nowrap">
+                                {customer[column.key] !== null && customer[column.key] !== undefined 
+                                  ? String(customer[column.key]) 
+                                  : 'N/A'}
+                              </td>
+                            ))}
+                            <td className="px-4 py-3 text-sm whitespace-nowrap">
+                              <span className={`px-3 py-1 rounded-full text-xs font-medium ${getChurnRiskColor(customer.Churn_Probability)}`}>
+                                {typeof customer.Churn_Probability === 'number' 
+                                  ? customer.Churn_Probability.toFixed(2) 
+                                  : customer.Churn_Probability}%
                               </span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
+                            </td>
+                            <td className="px-4 py-3 text-sm whitespace-nowrap relative">
+                              <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                                customer.Churn_Prediction === 'High Risk' 
+                                  ? 'bg-red-100 text-red-800' 
+                                  : 'bg-green-100 text-green-800'
+                              }`}>
+                                {customer.Churn_Prediction}
+                              </span>
+                              {hoveredRow === actualIndex && (
+                                <span className={`ml-2 px-2 py-1 rounded text-xs font-medium animate-fadeIn ${
+                                  theme === 'light' ? 'bg-blue-600 text-white' : 'bg-blue-500 text-white'
+                                }`}>
+                                  View Details →
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -599,6 +700,108 @@ const DashboardPage = () => {
                 </div>
               )}
             </div>
+
+            {/* Pagination Controls - Bottom */}
+            {predictionData && predictionData.customers && predictionData.customers.length > 0 && (
+              <div className={`mt-4 flex flex-col sm:flex-row justify-between items-center gap-4 p-4 rounded-lg ${theme === 'light' ? 'bg-gray-50' : 'bg-gray-800'}`}>
+                <div className="text-sm opacity-70">
+                  Page {currentPage} of {getTotalPages(predictionData.customers)}
+                </div>
+                
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handlePageChange(1)}
+                    disabled={currentPage === 1}
+                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                      currentPage === 1
+                        ? 'opacity-40 cursor-not-allowed'
+                        : theme === 'light'
+                        ? 'bg-white hover:bg-gray-100 border border-gray-300'
+                        : 'bg-gray-700 hover:bg-gray-600 border border-gray-600'
+                    }`}
+                  >
+                    First
+                  </button>
+                  
+                  <button
+                    onClick={() => handlePageChange(currentPage - 1)}
+                    disabled={currentPage === 1}
+                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                      currentPage === 1
+                        ? 'opacity-40 cursor-not-allowed'
+                        : theme === 'light'
+                        ? 'bg-white hover:bg-gray-100 border border-gray-300'
+                        : 'bg-gray-700 hover:bg-gray-600 border border-gray-600'
+                    }`}
+                  >
+                    Previous
+                  </button>
+                  
+                  {/* Page Numbers */}
+                  <div className="flex items-center gap-1">
+                    {Array.from({ length: getTotalPages(predictionData.customers) }, (_, i) => i + 1)
+                      .filter(page => {
+                        const totalPages = getTotalPages(predictionData.customers)
+                        // Show first page, last page, current page, and pages around current
+                        return (
+                          page === 1 ||
+                          page === totalPages ||
+                          (page >= currentPage - 1 && page <= currentPage + 1)
+                        )
+                      })
+                      .map((page, index, array) => (
+                        <div key={page} className="flex items-center">
+                          {index > 0 && array[index - 1] !== page - 1 && (
+                            <span className="px-2 opacity-50">...</span>
+                          )}
+                          <button
+                            onClick={() => handlePageChange(page)}
+                            className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                              currentPage === page
+                                ? theme === 'light'
+                                  ? 'bg-black text-white'
+                                  : 'bg-white text-black'
+                                : theme === 'light'
+                                ? 'bg-white hover:bg-gray-100 border border-gray-300'
+                                : 'bg-gray-700 hover:bg-gray-600 border border-gray-600'
+                            }`}
+                          >
+                            {page}
+                          </button>
+                        </div>
+                      ))}
+                  </div>
+                  
+                  <button
+                    onClick={() => handlePageChange(currentPage + 1)}
+                    disabled={currentPage === getTotalPages(predictionData.customers)}
+                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                      currentPage === getTotalPages(predictionData.customers)
+                        ? 'opacity-40 cursor-not-allowed'
+                        : theme === 'light'
+                        ? 'bg-white hover:bg-gray-100 border border-gray-300'
+                        : 'bg-gray-700 hover:bg-gray-600 border border-gray-600'
+                    }`}
+                  >
+                    Next
+                  </button>
+                  
+                  <button
+                    onClick={() => handlePageChange(getTotalPages(predictionData.customers))}
+                    disabled={currentPage === getTotalPages(predictionData.customers)}
+                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                      currentPage === getTotalPages(predictionData.customers)
+                        ? 'opacity-40 cursor-not-allowed'
+                        : theme === 'light'
+                        ? 'bg-white hover:bg-gray-100 border border-gray-300'
+                        : 'bg-gray-700 hover:bg-gray-600 border border-gray-600'
+                    }`}
+                  >
+                    Last
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )
       case 'demographics':

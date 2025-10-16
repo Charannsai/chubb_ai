@@ -23,7 +23,7 @@ CORS(app)
 UPLOAD_FOLDER = 'uploads'
 ALLOWED_EXTENSIONS = {'csv'}
 MODEL_PATH = 'xgb_model.pkl'
-OPENAI_API_KEY = 'API_KEY'
+OPENAI_API_KEY = 'API'
 
 # Initialize OpenAI client
 client = OpenAI(api_key=OPENAI_API_KEY)
